@@ -1,0 +1,63 @@
+common:
+  seed: 0
+
+dataset:
+  wav_dir: "data/LibriTTS_R_16k" # ${root}/train-clean-100, train-clean-360, ...
+  wav_dir_orig: "data/LibriTTS_R"  # if wav_dir == wav_dir_orig, original wav files are overwritten with 16 kHz waveforms
+  spectrogram_dir: "data/LibriTTS_R_16k/spectrogram"  # 34GB
+
+  ext_audio: ".wav"
+  ext_txt: ".normalized.txt"
+
+  train_file: "data/resynth/train.tsv"
+  dev_file: "data/resynth/dev.tsv"
+
+flow_matching:
+  path: "models/flow_matching"
+  batch_size: 2700 # work with single 24GB VRAM GPU
+  frames_per_seg: 100  # 2 seconds
+  num_workers: 16
+  epoch: 100
+  warmup_steps: 1000
+  lr: 0.001
+  lr_min: 0.0001
+  max_norm: 0.1
+  summary_interval: 100
+  save_interval_epoch: 20
+
+  dense_model_name: "mhubert-base-vp_mls_cv_8lang"
+  quantizer_model_name: "kmeans-expresso"
+  vocab_size: 2000
+
+hifigan:
+  path: "ryota-komatsu/fastspeech2_conformer_hifigan"
+  batch_size: 64
+  segment_size: 16080
+  num_workers: 20
+  training_epochs: 181  # 1M steps
+
+  num_gpus: 1
+  learning_rate: 0.0002
+  adam_b1: 0.8
+  adam_b2: 0.99
+  lr_decay: 0.999
+  seed: 1234
+
+  upsample_rates: [5, 4, 4, 2, 2]
+  upsample_kernel_sizes: [10, 9, 8, 4, 4]
+
+  n_fft: 400  # HuBERT
+  hop_size: 320  # HuBERT
+
+  dist_config:
+    dist_backend: "nccl"
+    dist_url: "tcp://localhost:54321"
+    world_size: 1
+
+  stdout_interval: 1000
+  summary_interval: 1000
+  checkpoint_interval: 10000
+  validation_interval: 10000
+
+asr:
+  name: "openai/whisper-large-v3"
