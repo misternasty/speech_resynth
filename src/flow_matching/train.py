@@ -102,8 +102,13 @@ def train_flow_matching(config):
         config.dataset.train_file,
         spectrogram_dir=config.dataset.spectrogram_dir,
         frames_per_seg=config.flow_matching.frames_per_seg,
+        ext_audio=config.dataset.ext_audio,
     )
-    dev_set = UnitDataset(config.dataset.dev_file, config.dataset.wav_dir)
+    dev_set = UnitDataset(
+        config.dataset.dev_file,
+        config.dataset.wav_dir,
+        ext_audio=config.dataset.ext_audio,
+    )
     train_loader = torch.utils.data.DataLoader(
         train_set,
         batch_size=config.flow_matching.batch_size,

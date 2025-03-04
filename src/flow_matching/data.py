@@ -18,7 +18,6 @@ class UnitDataset(torch.utils.data.Dataset):
     ):
         self.input_ids = []
         self.spectrogram_labels = []
-        self.speaker_ids = []
         self.transcripts = []
         self.names = []
         self.input_values = []
@@ -28,7 +27,6 @@ class UnitDataset(torch.utils.data.Dataset):
             for line in tqdm(lines):
                 name, units, transcript = line.split("\t", maxsplit=2)
 
-                speaker_id = int(name.split("/")[1])
                 input_ids = torch.tensor([int(u) + 1 for u in units.split()])  # 0: pad
 
                 if spectrogram_dir is not None:
@@ -47,7 +45,6 @@ class UnitDataset(torch.utils.data.Dataset):
 
                 self.input_ids.append(input_ids)
                 self.spectrogram_labels.append(spectrogram_labels)
-                self.speaker_ids.append(speaker_id)
                 self.transcripts.append(transcript)
                 self.names.append(name)
                 self.input_values.append(input_values)
@@ -60,7 +57,6 @@ class UnitDataset(torch.utils.data.Dataset):
     def __getitem__(self, n: int) -> Dict[str, Any]:
         input_ids = self.input_ids[n]
         spectrogram_labels = self.spectrogram_labels[n]
-        speaker_ids = self.speaker_ids[n]
         transcripts = self.transcripts[n]
         names = self.names[n]
         input_values = self.input_values[n]
@@ -79,7 +75,6 @@ class UnitDataset(torch.utils.data.Dataset):
         return {
             "input_ids": input_ids,
             "spectrogram_labels": spectrogram_labels,
-            "speaker_ids": speaker_ids,
             "transcripts": transcripts,
             "names": names,
             "input_values": input_values,

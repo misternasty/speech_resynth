@@ -426,8 +426,21 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
         self,
         input_ids: torch.LongTensor,
         dt: float = 0.1,
-        std_x0: float = 1.0,
+        truncation_value: Optional[float] = None,
     ) -> torch.FloatTensor:
+        """
+        Args:
+            input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
+                Input sequence of text vectors.
+            dt (`float`, defaults to 0.1):
+                Step size for the ordinary differential equation (ODE).
+            truncation_value (`float`, *optional*, defaults to `None`):
+                Truncation value of a prior sample x0~N(0, 1).
+                https://arxiv.org/abs/1809.11096
+        Returns:
+            x1 (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
+                Synthesized log mel-spectrograms.
+        """
         hidden_states = self.to_cond_emb(input_ids)
 
         # forward duration predictor
@@ -435,7 +448,9 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
             duration_predictions = self.duration_predictor(hidden_states)
             hidden_states = length_regulator(hidden_states, duration_predictions)
 
-        xt = torch.randn(1, hidden_states.shape[1], self.config.dim_in, device=hidden_states.device) * std_x0
+        xt = torch.randn(1, hidden_states.shape[1], self.config.dim_in, device=hidden_states.device)
+        if truncation_value is not None:
+            xt = torch.clamp(xt, -truncation_value, truncation_value)
 
         for t in torch.arange(0, 1, dt, device=self.device):
             # concat source signal, semantic / phoneme conditioning embed, and conditioning
@@ -474,7 +489,25 @@ class ConditionalFlowMatchingWithHifiGan(PreTrainedModel):
         return model
 
     @torch.inference_mode()
-    def forward(self, input_ids: torch.LongTensor) -> torch.FloatTensor:
-        spectrogram = self.model.sample(input_ids)
+    def forward(
+        self,
+        input_ids: torch.LongTensor,
+        dt: float = 0.1,
+        truncation_value: Optional[float] = None,
+    ) -> torch.FloatTensor:
+        """
+        Args:
+            input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
+                Input sequence of text vectors.
+            dt (`float`, defaults to 0.1):
+                Step size for the ordinary differential equation (ODE).
+            truncation_value (`float`, *optional*, defaults to `None`):
+                Truncation value of a prior sample x0~N(0, 1).
+                https://arxiv.org/abs/1809.11096
+        Returns:
+            x1 (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
+                Synthesized log mel-spectrograms.
+        """
+        spectrogram = self.model.sample(input_ids, dt, truncation_value)
         waveform = self.vocoder(spectrogram)
         return waveform

@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import List, Optional
 
+import librosa
 import torch
 import torchaudio
 from tqdm import tqdm
@@ -26,6 +27,11 @@ def resample(config):
 
         wav, sr = torchaudio.load(wav_path)
         wav = torchaudio.functional.resample(wav, sr, 16000)
+
+        if config.dataset.vad:
+            wav = wav.numpy()
+            wav, _ = librosa.effects.trim(wav, top_db=20)
+            wav = torch.from_numpy(wav)
 
         wav_path = wav_dir / wav_name
         wav_path.parent.mkdir(parents=True, exist_ok=True)

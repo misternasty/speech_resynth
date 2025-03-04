@@ -5,6 +5,7 @@ dataset:
   wav_dir: "data/LibriTTS_R_16k" # ${root}/train-clean-100, train-clean-360, ...
   wav_dir_orig: "data/LibriTTS_R"  # if wav_dir == wav_dir_orig, original wav files are overwritten with 16 kHz waveforms
   spectrogram_dir: "data/LibriTTS_R_16k/spectrogram"  # 34GB
+  vad: false
 
   ext_audio: ".wav"
   ext_txt: ".normalized.txt"
