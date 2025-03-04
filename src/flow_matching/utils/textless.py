@@ -21,7 +21,7 @@ def embedding(
     dense_model_name: str = "mhubert-base-vp_mls_cv_8lang",
     quantizer_model_name: str = "kmeans-expresso",
     vocab_size: int = 2000,
-):
+) -> torch.nn.Embedding:
     quantizer = dispatch_quantizer(dense_model_name, quantizer_model_name, vocab_size)
     embedding = torch.from_numpy(quantizer.kmeans_model.cluster_centers_)
     embedding = torch.cat((torch.zeros(1, embedding.shape[1]), embedding))

@@ -22,7 +22,7 @@ from ..utmos.score import Score
 
 
 @torch.inference_mode()
-def validate(config, dataloader, model, step, writer):
+def validate(config, dataloader, model: ConditionalFlowMatchingModel, step: int, writer: SummaryWriter):
     model.eval()
 
     torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -51,7 +51,11 @@ def validate(config, dataloader, model, step, writer):
     ref_scores = []
 
     for n, batch in enumerate(dataloader):
-        spectrogram = model.sample(input_ids=batch["input_ids"].cuda())
+        spectrogram = model.sample(
+            input_ids=batch["input_ids"].cuda(),
+            dt=config.flow_matching.dt,
+            truncation_value=config.flow_matching.truncation_value,
+        )
         hyp_wav = vocoder(spectrogram)
 
         hyp_score = scorer.score(hyp_wav)

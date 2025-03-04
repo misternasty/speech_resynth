@@ -26,6 +26,10 @@ flow_matching:
   summary_interval: 100
   save_interval_epoch: 20
 
+  # inference
+  dt: 0.1
+  truncation_value: null  # truncation trick (https://arxiv.org/abs/1809.11096)
+
   dense_model_name: "mhubert-base-vp_mls_cv_8lang"
   quantizer_model_name: "kmeans-expresso"
   vocab_size: 2000

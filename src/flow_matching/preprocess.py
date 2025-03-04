@@ -35,6 +35,7 @@ def resample(config):
 
         wav_path = wav_dir / wav_name
         wav_path.parent.mkdir(parents=True, exist_ok=True)
+        wav_path = str(wav_path)  # for sox backend
         torchaudio.save(wav_path, wav, 16000)
 
 
