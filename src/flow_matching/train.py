@@ -125,7 +125,23 @@ def train_flow_matching(config):
     )
 
     model = ConditionalFlowMatchingModel(
-        ConditionalFlowMatchingConfig(vocab_size=config.flow_matching.vocab_size),
+        ConditionalFlowMatchingConfig(
+            vocab_size=config.flow_matching.vocab_size,
+            dim_in=config.flow_matching.dim_in,
+            dim_cond_emb=config.flow_matching.dim_cond_emb,
+            hidden_size=config.flow_matching.hidden_size,
+            depth=config.flow_matching.depth,
+            heads=config.flow_matching.heads,
+            intermediate_size=config.flow_matching.intermediate_size,
+            ff_dropout=config.flow_matching.ff_dropout,
+            use_unet_skip_connection=config.flow_matching.use_unet_skip_connection,
+            conv_pos_embed_kernel_size=config.flow_matching.conv_pos_embed_kernel_size,
+            conv_pos_embed_groups=config.flow_matching.conv_pos_embed_groups,
+            attn_dropout=config.flow_matching.attn_dropout,
+            mean=config.flow_matching.mean,
+            std=config.flow_matching.std,
+            predict_duration=config.flow_matching.predict_duration,
+        ),
         embedding(
             config.flow_matching.dense_model_name,
             config.flow_matching.quantizer_model_name,

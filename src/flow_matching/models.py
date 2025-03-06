@@ -32,6 +32,7 @@ from torch import nn
 from transformers import FastSpeech2ConformerHifiGan, FastSpeech2ConformerHifiGanConfig, PreTrainedModel
 from transformers.models.fastspeech2_conformer.modeling_fastspeech2_conformer import length_regulator
 
+from ..hifigan.data import dynamic_range_compression_torch
 from .configs import ConditionalFlowMatchingConfig, ConditionalFlowMatchingWithHifiGanConfig
 
 
@@ -172,7 +173,7 @@ class SIGLU(nn.Module):
 
 class FeedForward(nn.Module):
     """
-    Multi-layered conv1d for Transformer block with a GLU activation function.
+    Multi-layered conv1d with a GLU activation function for Transformer block.
     https://arxiv.org/abs/1905.09263
     """
 
@@ -441,14 +442,19 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
             x1 (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
                 Synthesized log mel-spectrograms.
         """
+        mask = input_ids.ne(0)
+
         hidden_states = self.to_cond_emb(input_ids)
 
         # forward duration predictor
         if self.duration_predictor is not None:
             duration_predictions = self.duration_predictor(hidden_states)
+            duration_predictions = duration_predictions.masked_fill(~mask, 0.0)
             hidden_states = length_regulator(hidden_states, duration_predictions)
 
-        xt = torch.randn(1, hidden_states.shape[1], self.config.dim_in, device=hidden_states.device)
+        bsz, seq_len, _ = hidden_states.shape
+
+        xt = torch.randn(bsz, seq_len, self.config.dim_in, device=hidden_states.device)
         if truncation_value is not None:
             xt = torch.clamp(xt, -truncation_value, truncation_value)
 
@@ -457,16 +463,19 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
             # and project
             x = torch.cat([xt, hidden_states], dim=-1)
             x = self.to_embed(x)
-            x = self.conv_embed(x) + x
+            x = self.conv_embed(x, mask=mask) + x
 
-            time_emb = self.time_cond_mlp(t.unsqueeze(0))
+            time_emb = self.time_cond_mlp(t.unsqueeze(0).expand(bsz))
 
             # attend
-            x = self.transformer(x, adaptive_rmsnorm_cond=time_emb)
+            x = self.transformer(x, mask=mask, adaptive_rmsnorm_cond=time_emb)
             vt = self.to_pred(x)
             xt = xt + vt * dt
 
-        return xt * self.config.std + self.config.mean
+        x1 = xt * self.config.std + self.config.mean
+        x1[~mask] = dynamic_range_compression_torch(torch.tensor(0))
+
+        return x1
 
 
 class ConditionalFlowMatchingWithHifiGan(PreTrainedModel):
@@ -505,8 +514,8 @@ class ConditionalFlowMatchingWithHifiGan(PreTrainedModel):
                 Truncation value of a prior sample x0~N(0, 1).
                 https://arxiv.org/abs/1809.11096
         Returns:
-            x1 (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
-                Synthesized log mel-spectrograms.
+            waveform (`torch.FloatTensor` of shape `(batch_size, (sequence_length - 1) * 320 + 400)`):
+                Synthesized waveforms.
         """
         spectrogram = self.model.sample(input_ids, dt, truncation_value)
         waveform = self.vocoder(spectrogram)
