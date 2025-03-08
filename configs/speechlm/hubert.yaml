@@ -1,0 +1,52 @@
+dataset:
+  wav_dir_train: "data/librilight"
+  wav_dir_dev: "data/LibriSpeech"
+  ext_audio: ".flac"
+
+  unicode_train: "data/unicode/train"
+  unicode_dev: "data/unicode/dev"
+
+  train_file: "data/unit/train.txt"
+  dev_file: "data/unit/dev.txt"
+  units_per_sample: 128
+
+  swuggy_dir: "~/zr-data/datasets/sLM21-dataset/lexical"
+  sblimp_dir: "~/zr-data/datasets/sLM21-dataset/syntactic"
+  swuggy_dev: "results/hubert/lexical/dev.txt"
+  sblimp_dev: "results/hubert/syntactic/dev.txt"
+  swuggy_test: "results/hubert/lexical/test.txt"
+  sblimp_test: "results/hubert/syntactic/test.txt"
+
+dataloader:
+  batch_size: 96
+  num_workers: 16
+
+model:
+  path: "models/speechlm/hubert"
+  vocab_size: 16384  # BPE vocab size
+  hidden_size: 768
+  intermediate_size: 3072
+  num_hidden_layers: 12
+  num_attention_heads: 12
+  pad_token_id: 0
+  bos_token_id: null
+  eos_token_id: null
+
+optim:
+  epoch: 3
+  warmup_steps: 100
+  lr: 0.0002
+  lr_min: 0.00002
+  beta1: 0.9
+  beta2: 0.98
+  max_norm: 1.0
+  summary_interval: 100
+
+s2u:
+  dense_model_name: "hubert-base-ls960"
+  quantizer_model_name: "kmeans"
+  vocab_size: 100
+
+  tokenizer_path: "models/speechlm/hubert/tokenizer.json"
+
+  num_workers: 16

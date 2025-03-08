@@ -1,4 +1,4 @@
-# Textless Speech Resynthesis using Conditional Flow Matching and HuBERT units
+# Speech Resynthesis and Language Modeling with Flow Matching and Llama
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/python-3.9-blue.svg)](https://www.python.org)
@@ -19,10 +19,9 @@ sh scripts/setup.sh  # download textlesslib and UTMOS
 cd src/textlesslib
 pip install -e .
 cd -
-
 ```
 
-## Usage: Sampling multi-speaker speech from self-supervised discrete units
+## Usage: sampling multi-speaker speech from self-supervised discrete units
 
 ```python
 import torchaudio
@@ -55,6 +54,48 @@ units = units.unsqueeze(0) + 1  # 0: pad
 audio_values = decoder(units)
 ```
 
+## Usage: speech language modeling on subword units
+
+```python
+import torch
+import torchaudio
+from textless.data.speech_encoder import SpeechEncoder
+from tokenizers import Tokenizer
+from transformers import LlamaForCausalLM
+
+from src.speechlm.utils import shift_unit
+
+wav_path = "/path/to/wav"
+
+encoder = SpeechEncoder.by_name(
+    dense_model_name="hubert-base-ls960",
+    quantizer_model_name="kmeans",
+    vocab_size=100,
+    deduplicate=True,
+    need_f0=False,
+).cuda()
+
+# BPE tokenizer
+tokenizer = Tokenizer.from_file("/path/to/pretrained/tokenizer")
+
+model = LlamaForCausalLM.from_pretrained("/path/to/pretrained/model").cuda()
+
+# load a waveform
+waveform, sr = torchaudio.load(wav_path)
+waveform = torchaudio.functional.resample(waveform, sr, 16000)
+
+# encode a waveform into pseudo-phonetic units
+units = encoder(waveform.cuda())["units"].tolist()
+unicodes = "".join(chr(shift_unit(u)) for u in units)
+
+# BPE
+input_ids = tokenizer.encode(unicodes).ids
+input_ids = torch.tensor([input_ids], device="cuda") + 1  # 0: pad
+
+# Speech LM
+logits = model(input_ids=input_ids).logits
+```
+
 ## Demo
 
 Jupyter notebook demo is found [here](demo.ipynb).
@@ -74,8 +115,63 @@ dataset_root=data
 sh scripts/download_libritts.sh ${dataset_root}
 ```
 
-## Training
+To perform speech language modeling, please download the Libri-Light under `dataset_root`.
+```shell
+dataset_root=data
+
+sh scripts/download_librilight.sh ${dataset_root}  # 7TB
+sh scripts/download_slm21.sh  # download sWUGGY and sBLIMP
+```
+
+## Training a unit-to-speech synthesizer
 
 ```shell
-python main.py
+python main_resynth.py --config=configs/resynth/mhubert-expresso-2000.yaml
+```
+
+To run only a specific stage (resample, tokenize, extract_features, train_hifigan, or train_flow_matching), pass it as an argument.
+
+```shell
+python main_resynth.py tokenize --config=configs/resynth/mhubert-expresso-2000.yaml
+```
+
+## Training a speech language model
+
+```shell
+torchrun \
+    --nnodes=1 \
+    --nproc_per_node=1 \
+    # --nproc_per_node=4 \  # multi-GPU
+    --rdzv_id=100 \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint=localhost:29400 \
+    main_speechlm.py \
+    --config=configs/speechlm/hubert.yaml
+```
+
+To run only a sub-task (encode, tokenize, or train), specify it as an argument.
+
+```shell
+torchrun \
+    --nnodes=1 \
+    --nproc_per_node=1 \
+    --rdzv_id=100 \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint=localhost:29400 \
+    main_speechlm.py encode \
+    --config=configs/speechlm/hubert.yaml
+```
+
+## Evaluation of a speech language model
+
+See [Zero Resource Speech homepage](https://zerospeech.com/tasks/task_4/tasks_goals/) and [paper](https://arxiv.org/abs/2011.11588) for task details.
+
+```shell
+submission_dir=results/hubert
+
+zrc submission:init sLM21 ${submission_dir}
+
+python main_speechlm.py eval --config=configs/speechlm/hubert.yaml
+
+zrc benchmarks:run sLM21 ${submission_dir} --skip-validation --sets test --task lexical syntactic
 ```
