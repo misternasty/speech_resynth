@@ -106,7 +106,7 @@ def train(rank, config):
     train_loader = DataLoader(
         trainset,
         num_workers=config.hifigan.num_workers,
-        shuffle=True,
+        shuffle=(train_sampler is None),
         sampler=train_sampler,
         batch_size=config.hifigan.batch_size,
         pin_memory=True,
@@ -197,7 +197,9 @@ def train(rank, config):
 
                 # checkpointing
                 if steps % config.hifigan.checkpoint_interval == 0 and steps != 0:
-                    generator.save_pretrained(config.hifigan.path)
+                    (generator.module if config.hifigan.num_gpus > 1 else generator).save_pretrained(
+                        config.hifigan.path
+                    )
                     save_checkpoint(
                         os.path.join(config.hifigan.path, "do"),
                         {

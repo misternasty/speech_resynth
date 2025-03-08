@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from transformers import LlamaConfig, LlamaForCausalLM
 
@@ -14,7 +15,6 @@ from .eval import _eval
 from .utils import get_lr_schedule
 
 
-@torch.amp.autocast("cuda", dtype=torch.bfloat16)
 @torch.inference_mode()
 def validate(config, model, step: int, writer: SummaryWriter):
     torch.cuda.empty_cache()
@@ -77,11 +77,13 @@ def train(config):
     # create model and move it to GPU with id rank
     device_id = rank % torch.cuda.device_count()
 
-    train_set = UnitDataset(config.dataset.train_file, config.dataset.units_per_sample)
-    train_loader = torch.utils.data.DataLoader(
-        train_set,
+    trainset = UnitDataset(config.dataset.train_file, config.dataset.units_per_sample)
+    sampler = DistributedSampler(trainset) if dist.is_initialized() else None
+    train_loader = DataLoader(
+        trainset,
         batch_size=config.dataloader.batch_size,
-        shuffle=True,
+        shuffle=(sampler is None),
+        sampler=sampler,
         num_workers=config.dataloader.num_workers,
         persistent_workers=True,
     )
@@ -137,6 +139,9 @@ def train(config):
 
     for epoch in range(last_epoch + 1, config.optim.epoch + 1):
         model.train()
+
+        if dist.is_initialized():
+            sampler.set_epoch(epoch)
 
         for batch in train_loader:
             with torch.amp.autocast("cuda", dtype=torch.bfloat16):
