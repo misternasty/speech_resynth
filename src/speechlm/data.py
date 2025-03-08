@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 import torch
 import torchaudio
+from torch.nn.utils.rnn import pad_sequence
 
 
 class SpeechDataset(torch.utils.data.Dataset):
@@ -17,11 +18,24 @@ class SpeechDataset(torch.utils.data.Dataset):
         name = wav_path.stem
         wav_path = str(wav_path)
         input_values, sr = torchaudio.load(wav_path)
+        input_values = input_values.squeeze(0)
         return {"input_values": input_values, "name": name}
 
     @staticmethod
     def collate_fn(batch):
-        return batch
+        input_values = [item["input_values"] for item in batch]
+        attention_mask = [torch.ones_like(item["input_values"], dtype=torch.long) for item in batch]
+
+        input_values = pad_sequence(input_values, batch_first=True)
+        attention_mask = pad_sequence(attention_mask, batch_first=True)
+        wavs_len = torch.tensor([len(item["input_values"]) for item in batch])
+
+        return {
+            "input_values": input_values,
+            "attention_mask": attention_mask,
+            "wavs_len": wavs_len,
+            "padding_mask": ~attention_mask.bool(),
+        }
 
 
 class UnitDataset(torch.utils.data.Dataset):
