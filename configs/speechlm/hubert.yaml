@@ -1,21 +1,19 @@
 dataset:
   wav_dir_train: "data/librilight"
-  wav_dir_dev: "data/LibriSpeech"
   ext_audio: ".flac"
 
-  unicode_train: "data/unicode/train"
-  unicode_dev: "data/unicode/dev"
-
-  train_file: "data/unit/train.txt"
-  dev_file: "data/unit/dev.txt"
+  unicode_train: "data/speechlm/hubert/unicode/train"
+  train_file: "data/speechlm/hubert/unit/train.txt"
   units_per_sample: 128
+
+  swuggy_dev_file: "data/speechlm/hubert/unit/lexical/dev.json"
+  sblimp_dev_file: "data/speechlm/hubert/unit/syntactic/dev.json"
+  swuggy_test_file: "data/speechlm/hubert/unit/lexical/test.json"
+  sblimp_test_file: "data/speechlm/hubert/unit/syntactic/test.json"
 
   swuggy_dir: "~/zr-data/datasets/sLM21-dataset/lexical"
   sblimp_dir: "~/zr-data/datasets/sLM21-dataset/syntactic"
-  swuggy_dev: "results/hubert/lexical/dev.txt"
-  sblimp_dev: "results/hubert/syntactic/dev.txt"
-  swuggy_test: "results/hubert/lexical/test.txt"
-  sblimp_test: "results/hubert/syntactic/test.txt"
+  result_dir: "results/hubert"
 
 dataloader:
   batch_size: 96

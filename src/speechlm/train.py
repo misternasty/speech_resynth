@@ -1,6 +1,8 @@
 import os
+import subprocess
 from pathlib import Path
 
+import pandas as pd
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -8,26 +10,62 @@ from torch.utils.tensorboard import SummaryWriter
 from transformers import LlamaConfig, LlamaForCausalLM
 
 from .data import UnitDataset
+from .eval import _eval
 from .utils import get_lr_schedule
 
 
 @torch.amp.autocast("cuda", dtype=torch.bfloat16)
 @torch.inference_mode()
-def validate(dataloader, model, step: int, writer: SummaryWriter):
+def validate(config, model, step: int, writer: SummaryWriter):
     torch.cuda.empty_cache()
     model.eval()
 
-    losses = []
-    for batch in dataloader:
-        loss = model(
-            input_ids=batch["input_ids"].cuda(),
-            attention_mask=batch["attention_mask"].cuda(),
-            labels=batch["labels"].cuda(),
-        ).loss
-        losses.append(loss)
-    loss = torch.tensor(losses).mean().item()
+    if not Path(config.dataset.result_dir).is_dir():
+        subprocess.run(["zrc", "submission:init", "sLM21", config.dataset.result_dir])
 
-    writer.add_scalar("dev/loss", loss, step)
+    _eval(
+        model,
+        config.dataset.swuggy_dev_file,
+        Path(config.dataset.result_dir) / "lexical/dev.txt",
+        config.dataloader.batch_size,
+    )
+    _eval(
+        model,
+        config.dataset.sblimp_dev_file,
+        Path(config.dataset.result_dir) / "syntactic/dev.txt",
+        config.dataloader.batch_size,
+    )
+
+    subprocess.run(
+        [
+            "zrc",
+            "benchmarks:run",
+            "sLM21",
+            config.dataset.result_dir,
+            "--sets",
+            "dev",
+            "--task",
+            "lexical",
+            "syntactic",
+        ]
+    )
+
+    df_swuggy = pd.read_csv(Path(config.dataset.result_dir) / "scores/score_lexical_dev_by_frequency.csv", index_col=0)
+    df_sblimp = pd.read_csv(Path(config.dataset.result_dir) / "scores/score_syntactic_dev_by_type.csv", index_col=0)
+
+    swuggy_all = (df_swuggy["n"] * df_swuggy["score"]).sum() / df_swuggy["n"].sum()
+    swuggy_oov = df_swuggy.loc["oov", "score"]
+
+    df_swuggy_iv = df_swuggy[df_swuggy.index != "oov"]
+    swuggy_iv = (df_swuggy_iv["n"] * df_swuggy_iv["score"]).sum() / df_swuggy_iv["n"].sum()
+
+    sblimp = (df_sblimp["n"] * df_sblimp["score"]).sum() / df_sblimp["n"].sum()
+
+    writer.add_scalar("dev/sWUGGY all", swuggy_all, step)
+    writer.add_scalar("dev/sWUGGY in-vocab", swuggy_iv, step)
+    writer.add_scalar("dev/sWUGGY out-of-vocab", swuggy_oov, step)
+    writer.add_scalar("dev/sBLIMP", sblimp, step)
+
     torch.cuda.empty_cache()
 
 
@@ -49,13 +87,6 @@ def train(config):
     )
 
     if rank == 0:
-        dev_set = UnitDataset(config.dataset.dev_file, config.dataset.units_per_sample)
-        dev_loader = torch.utils.data.DataLoader(
-            dev_set,
-            batch_size=config.dataloader.batch_size,
-            num_workers=config.dataloader.num_workers,
-            persistent_workers=True,
-        )
         writer = SummaryWriter(config.model.path)
 
     model = LlamaForCausalLM(
@@ -142,7 +173,7 @@ def train(config):
                     writer.add_scalar("train/grad_norm", grad_norm.item(), step)
 
         if rank == 0:
-            validate(dev_loader, model, step, writer)
+            validate(config, model, step, writer)
 
             # save model
             ckpt = {

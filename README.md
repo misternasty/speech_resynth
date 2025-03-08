@@ -76,7 +76,7 @@ encoder = SpeechEncoder.by_name(
 ).cuda()
 
 # BPE tokenizer
-tokenizer = Tokenizer.from_file("/path/to/pretrained/tokenizer")
+tokenizer = Tokenizer.from_file("/path/to/pretrained/tokenizer.json")
 
 model = LlamaForCausalLM.from_pretrained("/path/to/pretrained/model").cuda()
 
@@ -137,11 +137,12 @@ python main_resynth.py tokenize --config=configs/resynth/mhubert-expresso-2000.y
 
 ## Training a speech language model
 
+Set the number of GPUs to `nproc_per_node` to enable multi-GPU training.
+
 ```shell
 torchrun \
     --nnodes=1 \
     --nproc_per_node=1 \
-    # --nproc_per_node=4 \  # multi-GPU
     --rdzv_id=100 \
     --rdzv_backend=c10d \
     --rdzv_endpoint=localhost:29400 \
@@ -167,11 +168,5 @@ torchrun \
 See [Zero Resource Speech homepage](https://zerospeech.com/tasks/task_4/tasks_goals/) and [paper](https://arxiv.org/abs/2011.11588) for task details.
 
 ```shell
-submission_dir=results/hubert
-
-zrc submission:init sLM21 ${submission_dir}
-
 python main_speechlm.py eval --config=configs/speechlm/hubert.yaml
-
-zrc benchmarks:run sLM21 ${submission_dir} --skip-validation --sets test --task lexical syntactic
 ```

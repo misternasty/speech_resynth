@@ -1,88 +1,74 @@
+import subprocess
 from pathlib import Path
 
+import pandas as pd
 import torch
 import torch.nn.functional as F
-from textless.data.speech_encoder import SpeechEncoder
-from tokenizers import Tokenizer
-from tqdm import tqdm
 from transformers import LlamaForCausalLM
 
-from .data import SpeechDataset
-from .utils import shift_unit
+from .utils import load_batch_from_json
 
 
 def evaluate(config):
-    encoder = SpeechEncoder.by_name(
-        dense_model_name=config.s2u.dense_model_name,
-        quantizer_model_name=config.s2u.quantizer_model_name,
-        vocab_size=config.s2u.vocab_size,
-        deduplicate=True,
-        need_f0=False,
-    ).cuda()
-    tokenizer = Tokenizer.from_file(config.s2u.tokenizer_path)
     model = LlamaForCausalLM.from_pretrained(config.model.path).cuda()
 
-    swuggy_dir = Path(config.dataset.swuggy_dir).expanduser()
-    sblimp_dir = Path(config.dataset.sblimp_dir).expanduser()
-
-    swuggy_dev_paths = list(swuggy_dir.glob("dev/*.wav"))
-    sblimp_dev_paths = list(sblimp_dir.glob("dev/*.wav"))
-    swuggy_test_paths = list(swuggy_dir.glob("test/*.wav"))
-    sblimp_test_paths = list(sblimp_dir.glob("test/*.wav"))
-
-    swuggy_dev_set = SpeechDataset(swuggy_dev_paths)
-    sblimp_dev_set = SpeechDataset(sblimp_dev_paths)
-    swuggy_test_set = SpeechDataset(swuggy_test_paths)
-    sblimp_test_set = SpeechDataset(sblimp_test_paths)
-
-    swuggy_dev_loader = torch.utils.data.DataLoader(
-        swuggy_dev_set, config.dataloader.batch_size, collate_fn=SpeechDataset.collate_fn
+    _eval(
+        model,
+        config.dataset.swuggy_test_file,
+        Path(config.dataset.result_dir) / "lexical/test.txt",
+        config.dataloader.batch_size,
     )
-    sblimp_dev_loader = torch.utils.data.DataLoader(
-        sblimp_dev_set, config.dataloader.batch_size, collate_fn=SpeechDataset.collate_fn
-    )
-    swuggy_test_loader = torch.utils.data.DataLoader(
-        swuggy_test_set, config.dataloader.batch_size, collate_fn=SpeechDataset.collate_fn
-    )
-    sblimp_test_loader = torch.utils.data.DataLoader(
-        sblimp_test_set, config.dataloader.batch_size, collate_fn=SpeechDataset.collate_fn
+    _eval(
+        model,
+        config.dataset.sblimp_test_file,
+        Path(config.dataset.result_dir) / "syntactic/test.txt",
+        config.dataloader.batch_size,
     )
 
-    _eval(encoder, tokenizer, model, config.dataset.swuggy_dev, swuggy_dev_loader)
-    _eval(encoder, tokenizer, model, config.dataset.sblimp_dev, sblimp_dev_loader)
-    _eval(encoder, tokenizer, model, config.dataset.swuggy_test, swuggy_test_loader)
-    _eval(encoder, tokenizer, model, config.dataset.sblimp_test, sblimp_test_loader)
+    subprocess.run(
+        [
+            "zrc",
+            "benchmarks:run",
+            "sLM21",
+            config.dataset.result_dir,
+            "--skip-validation",
+            "--sets",
+            "test",
+            "--task",
+            "lexical",
+            "syntactic",
+        ]
+    )
+
+    df_swuggy = pd.read_csv(Path(config.dataset.result_dir) / "scores/score_lexical_test_by_frequency.csv", index_col=0)
+    df_sblimp = pd.read_csv(Path(config.dataset.result_dir) / "scores/score_syntactic_test_by_type.csv", index_col=0)
+
+    swuggy_all = (df_swuggy["n"] * df_swuggy["score"]).sum() / df_swuggy["n"].sum()
+    swuggy_oov = df_swuggy.loc["oov", "score"]
+
+    df_swuggy_iv = df_swuggy[df_swuggy.index != "oov"]
+    swuggy_iv = (df_swuggy_iv["n"] * df_swuggy_iv["score"]).sum() / df_swuggy_iv["n"].sum()
+
+    sblimp = (df_sblimp["n"] * df_sblimp["score"]).sum() / df_sblimp["n"].sum()
+
+    pd.DataFrame(
+        [swuggy_all, swuggy_iv, swuggy_oov, sblimp],
+        index=["sWUGGY all", "sWUGGY in-vocab", "sWUGGY out-of-vocab", "sBLIMP"],
+    ).to_csv(Path(config.dataset.result_dir) / "scores/score.csv")
 
 
 @torch.inference_mode()
 def _eval(
-    encoder: SpeechEncoder,
-    tokenizer: Tokenizer,
     model: LlamaForCausalLM,
-    file,
-    data_loader: torch.utils.data.DataLoader,
+    in_file,
+    out_file,
+    batch_size: int,
 ):
-    with open(file, "w") as f:
-        for batch in tqdm(data_loader):
-            # Speech encoder
-            batch_unicodes = []
-            for item in batch:
-                units = encoder(item["input_values"].cuda())["units"].tolist()
-                unicodes = "".join(chr(shift_unit(u)) for u in units)
-                batch_unicodes.append(unicodes)
-
-            # BPE
-            encoded = tokenizer.encode_batch(batch_unicodes)
-
-            # Pad
-            max_len = max(len(item.ids) for item in encoded)
-            input_ids = [
-                F.pad(torch.tensor(item.ids, device="cuda") + 1, (0, max_len - len(item.ids))) for item in encoded
-            ]
-            input_ids = torch.stack(input_ids)
-            labels = input_ids.masked_fill(input_ids.eq(0), -100)
-
+    with open(out_file, "w") as f:
+        for batch in load_batch_from_json(in_file, batch_size):
             # Speech LM
+            input_ids = batch["input_ids"].cuda()
+            labels = input_ids.masked_fill(input_ids.eq(0), -100)
             logits = model(input_ids=input_ids, labels=labels).logits.transpose(1, 2)
 
             labels = F.pad(labels, (0, 1), value=-100)
@@ -92,5 +78,5 @@ def _eval(
             scores = scores.sum(dim=1) / scores.ne(0).sum(dim=1)
             scores = scores.tolist()
 
-            for item, score in zip(batch, scores):
-                f.write(f"{item['name']} {score}\n")
+            for name, score in zip(batch["names"], scores):
+                f.write(f"{name} {score}\n")

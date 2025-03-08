@@ -2,7 +2,7 @@ import fire
 from omegaconf import OmegaConf
 
 from src.speechlm.eval import evaluate
-from src.speechlm.tokenize import encode, tokenize
+from src.speechlm.tokenize import encode, tokenize, tokenize_slm21
 from src.speechlm.train import train
 
 
@@ -14,6 +14,10 @@ class TaskRunner:
     def tokenize(self, config: str = "configs/speechlm/hubert.yaml"):
         config = OmegaConf.load(config)
         tokenize(config)
+
+    def tokenize_slm21(self, config: str = "configs/speechlm/hubert.yaml"):
+        config = OmegaConf.load(config)
+        tokenize_slm21(config)
 
     def train(self, config: str = "configs/speechlm/hubert.yaml"):
         config = OmegaConf.load(config)
@@ -27,6 +31,7 @@ class TaskRunner:
         config = OmegaConf.load(config)
         encode(config, spkids)
         tokenize(config)
+        tokenize_slm21(config)
         train(config)
 
 
