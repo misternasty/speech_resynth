@@ -10,7 +10,7 @@ from tokenizers.trainers import BpeTrainer
 from tqdm import tqdm
 
 from .data import SpeechDataset
-from .utils import shift_unit
+from .utils import convert_units_to_unicode, shift_unit
 
 
 def tokenize(config):
@@ -83,7 +83,7 @@ def _tokenize_slm21(
 
     for item in tqdm(data_loader):
         outputs = encoder(item["input_values"].cuda())
-        unicodes = "".join(chr(shift_unit(u)) for u in outputs["units"].tolist())
+        unicodes = convert_units_to_unicode(outputs["units"].tolist())
         input_ids = tokenizer.encode(unicodes).ids
 
         dataset[item["name"][0]] = input_ids
@@ -121,6 +121,6 @@ def _encode(encoder: SpeechEncoder, file, data_loader: torch.utils.data.DataLoad
                 outputs = encoder(item["input_values"])
                 encoder.cuda()
 
-            units = "".join(chr(shift_unit(u)) for u in outputs["units"].tolist())
+            unicodes = convert_units_to_unicode(outputs["units"].tolist())
 
-            f.write(f"{units}\n")
+            f.write(f"{unicodes}\n")

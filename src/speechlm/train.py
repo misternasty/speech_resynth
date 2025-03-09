@@ -27,13 +27,13 @@ def validate(config, model, step: int, writer: SummaryWriter):
         model,
         config.dataset.swuggy_dev_file,
         Path(config.dataset.result_dir) / "lexical/dev.txt",
-        config.dataloader.batch_size,
+        config.dataloader.batch_size_per_device,
     )
     _eval(
         model,
         config.dataset.sblimp_dev_file,
         Path(config.dataset.result_dir) / "syntactic/dev.txt",
-        config.dataloader.batch_size,
+        config.dataloader.batch_size_per_device,
     )
 
     subprocess.run(
@@ -81,7 +81,7 @@ def train(config):
     sampler = DistributedSampler(trainset) if dist.is_initialized() else None
     train_loader = DataLoader(
         trainset,
-        batch_size=config.dataloader.batch_size,
+        batch_size=config.dataloader.batch_size_per_device,
         shuffle=(sampler is None),
         sampler=sampler,
         num_workers=config.dataloader.num_workers,
@@ -170,12 +170,16 @@ def train(config):
             step += 1
 
             # tensorboard log
-            if step % config.optim.summary_interval == 0:
+            if rank == 0 and step % config.optim.summary_interval == 0:
                 writer.add_scalar("train/loss", loss.item(), step)
                 writer.add_scalar("train/lr", lr, step)
                 writer.add_scalar("train/scale", scale, step)
                 if config.optim.max_norm is not None:
                     writer.add_scalar("train/grad_norm", grad_norm.item(), step)
+
+                # trace the peak GPU memory
+                writer.add_scalar("memory/allocated (GB)", torch.cuda.max_memory_allocated() / 2**30, step)
+                writer.add_scalar("memory/reserved (GB)", torch.cuda.max_memory_reserved() / 2**30, step)
 
         if rank == 0:
             validate(config, model, step, writer)

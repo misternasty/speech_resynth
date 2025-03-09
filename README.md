@@ -63,7 +63,7 @@ from textless.data.speech_encoder import SpeechEncoder
 from tokenizers import Tokenizer
 from transformers import LlamaForCausalLM
 
-from src.speechlm.utils import shift_unit
+from src.speechlm.utils import convert_units_to_unicode
 
 wav_path = "/path/to/wav"
 
@@ -86,7 +86,7 @@ waveform = torchaudio.functional.resample(waveform, sr, 16000)
 
 # encode a waveform into pseudo-phonetic units
 units = encoder(waveform.cuda())["units"].tolist()
-unicodes = "".join(chr(shift_unit(u)) for u in units)
+unicodes = convert_units_to_unicode(units)
 
 # BPE
 input_ids = tokenizer.encode(unicodes).ids

@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from transformers import LlamaForCausalLM
 
-from .utils import load_batch_from_json
+from .utils import load_named_units_from_json
 
 
 def evaluate(config):
@@ -16,13 +16,13 @@ def evaluate(config):
         model,
         config.dataset.swuggy_test_file,
         Path(config.dataset.result_dir) / "lexical/test.txt",
-        config.dataloader.batch_size,
+        config.dataloader.batch_size_per_device,
     )
     _eval(
         model,
         config.dataset.sblimp_test_file,
         Path(config.dataset.result_dir) / "syntactic/test.txt",
-        config.dataloader.batch_size,
+        config.dataloader.batch_size_per_device,
     )
 
     subprocess.run(
@@ -65,7 +65,7 @@ def _eval(
     batch_size: int,
 ):
     with open(out_file, "w") as f:
-        for batch in load_batch_from_json(in_file, batch_size):
+        for batch in load_named_units_from_json(in_file, batch_size):
             # Speech LM
             input_ids = batch["input_ids"].cuda()
             labels = input_ids.masked_fill(input_ids.eq(0), -100)
