@@ -22,308 +22,19 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from typing import Optional, Union
+from typing import List, Optional
 
-import einx
 import torch
 import torch.nn.functional as F
-from einops import pack, rearrange
 from torch import nn
 from transformers import FastSpeech2ConformerHifiGan, FastSpeech2ConformerHifiGanConfig, PreTrainedModel
 from transformers.models.fastspeech2_conformer.modeling_fastspeech2_conformer import length_regulator
 
 from ..hifigan.data import dynamic_range_compression_torch
 from .configs import ConditionalFlowMatchingConfig, ConditionalFlowMatchingWithHifiGanConfig
-
-
-def exists(val):
-    return val is not None
-
-
-class RandomFourierEmbed(nn.Module):
-    """
-    Copied from https://github.com/lucidrains/e2-tts-pytorch/blob/main/e2_tts_pytorch/e2_tts.py
-    """
-
-    def __init__(self, hidden_size: int):
-        super().__init__()
-        assert hidden_size % 2 == 0
-        self.register_buffer("weights", torch.randn(hidden_size // 2))
-
-    def forward(self, x):
-        freqs = einx.multiply("i, j -> i j", x, self.weights) * 2 * torch.pi
-        fourier_embed, _ = pack((x, freqs.sin(), freqs.cos()), "b *")
-        return fourier_embed
-
-
-class RotaryEmbedding(nn.Module):
-    """
-    rotary positional embeddings
-    https://arxiv.org/abs/2104.09864
-    """
-
-    def __init__(self, hidden_size: int, theta=10000):
-        super().__init__()
-        inv_freq = 1.0 / (theta ** (torch.arange(0, hidden_size, 2).float() / hidden_size))
-        self.register_buffer("inv_freq", inv_freq)
-
-    @property
-    def device(self):
-        return self.inv_freq.device
-
-    @torch.amp.autocast("cuda", enabled=False)
-    def forward(self, t: Union[int, torch.Tensor]):
-        if not torch.is_tensor(t):
-            t = torch.arange(t, device=self.device)
-
-        t = t.type_as(self.inv_freq)
-        freqs = torch.einsum("i , j -> i j", t, self.inv_freq)
-        freqs = torch.cat((freqs, freqs), dim=-1)
-        return freqs
-
-
-def rotate_half(x):
-    x1, x2 = x.chunk(2, dim=-1)
-    return torch.cat((-x2, x1), dim=-1)
-
-
-@torch.amp.autocast("cuda", enabled=False)
-def apply_rotary_pos_emb(pos, t):
-    return t * pos.cos() + rotate_half(t) * pos.sin()
-
-
-class ConvPositionEmbed(nn.Module):
-    def __init__(self, hidden_size: int, kernel_size: int = 31, groups: int = 1):
-        super().__init__()
-        assert kernel_size % 2 == 1
-        self.dw_conv1d = nn.Sequential(
-            nn.Conv1d(hidden_size, hidden_size, kernel_size, groups=groups, padding=kernel_size // 2), nn.GELU()
-        )
-
-    def forward(self, x, mask=None):
-        if exists(mask):
-            mask = mask[..., None]
-            x = x.masked_fill(~mask, 0.0)
-
-        x = rearrange(x, "b n c -> b c n")
-        x = self.dw_conv1d(x)
-        out = rearrange(x, "b c n -> b n c")
-
-        if exists(mask):
-            out = out.masked_fill(~mask, 0.0)
-
-        return out
-
-
-class AdaptiveRMSNorm(nn.Module):
-    def __init__(self, hidden_size: int):
-        super().__init__()
-        self.scale = hidden_size**0.5
-        self.to_weight = nn.Linear(hidden_size, hidden_size, bias=False)
-        nn.init.zeros_(self.to_weight.weight)
-
-    def forward(self, x, *, condition):
-        if condition.ndim == 2:
-            condition = rearrange(condition, "b d -> b 1 d")
-
-        normed = F.normalize(x, dim=-1)
-        gamma = self.to_weight(condition)
-        return normed * self.scale * (gamma + 1.0)
-
-
-class Attention(nn.Module):
-    def __init__(self, hidden_size: int, heads: int, dropout: float = 0.0):
-        super().__init__()
-        self.heads = heads
-        self.dropout = dropout
-
-        self.to_qkv = nn.Linear(hidden_size, hidden_size * 3, bias=False)
-        self.to_out = nn.Linear(hidden_size, hidden_size, bias=False)
-
-    def forward(self, x, mask=None, rotary_emb=None):
-        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.heads), (q, k, v))
-
-        if exists(rotary_emb):
-            q, k = map(lambda t: apply_rotary_pos_emb(rotary_emb, t), (q, k))
-
-        if mask is not None and mask.ndim != 4:
-            mask = mask.unsqueeze(1).unsqueeze(2)
-
-        _, heads, q_len, _ = q.shape
-
-        # Check if mask exists and expand to compatible shape
-        # The mask is B L, so it would have to be expanded to B H N L
-        if mask is not None:
-            mask = mask.expand(-1, heads, q_len, -1)
-
-        # Check if there is a compatible device for flash attention
-        # pytorch 2.0 flash attn: q, k, v, mask, dropout, softmax_scale
-        out = F.scaled_dot_product_attention(q, k, v, attn_mask=mask, dropout_p=self.dropout if self.training else 0.0)
-
-        out = rearrange(out, "b h n d -> b n (h d)")
-        return self.to_out(out)
-
-
-class SIGLU(nn.Module):
-    def forward(self, x):
-        x, gate = x.chunk(2, dim=-2)
-        return F.silu(gate) * x
-
-
-class FeedForward(nn.Module):
-    """
-    Multi-layered conv1d with a GLU activation function for Transformer block.
-    https://arxiv.org/abs/1905.09263
-    """
-
-    def __init__(self, hidden_size: int, intermediate_size: int, dropout: float = 0.0, kernel_size: int = 3):
-        super().__init__()
-
-        self.conv1 = nn.Conv1d(
-            hidden_size, intermediate_size * 2, kernel_size, stride=1, padding=(kernel_size - 1) // 2
-        )
-        self.glu = SIGLU()
-        self.dropout = nn.Dropout(dropout)
-        self.conv2 = nn.Conv1d(intermediate_size, hidden_size, kernel_size, stride=1, padding=(kernel_size - 1) // 2)
-
-    def forward(self, hidden_states: torch.FloatTensor, mask: Optional[torch.BoolTensor] = None):
-        """
-        Args:
-            hidden_states (`torch.Tensor` of shape `(batch_size, sequence_length, hidden_size)`):
-                Batch of input tensors.
-
-        Returns:
-            `torch.Tensor`: Batch of output tensors `(batch_size, sequence_length, hidden_size)`.
-        """
-        hidden_states = hidden_states.transpose(-1, 1)
-
-        if mask is not None:
-            mask = mask.unsqueeze(1)
-            hidden_states = hidden_states.masked_fill(~mask, 0.0)
-
-        hidden_states = self.conv1(hidden_states)
-        hidden_states = self.glu(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-
-        if mask is not None:
-            hidden_states = hidden_states.masked_fill(~mask, 0.0)
-
-        hidden_states = self.conv2(hidden_states)
-        hidden_states = hidden_states.transpose(-1, 1)
-        return hidden_states
-
-
-class Transformer(nn.Module):
-    def __init__(
-        self,
-        hidden_size: int,
-        depth: int,
-        heads: int,
-        intermediate_size: int,
-        attn_dropout: float,
-        ff_dropout: float,
-        use_unet_skip_connection: bool,
-    ):
-        super().__init__()
-        assert depth % 2 == 0
-        self.layers = nn.ModuleList([])
-
-        self.rotary_emb = RotaryEmbedding(hidden_size=hidden_size // heads)
-
-        for ind in range(depth):
-            layer = ind + 1
-            has_skip = use_unet_skip_connection and layer > (depth // 2)
-
-            self.layers.append(
-                nn.ModuleList(
-                    [
-                        nn.Linear(hidden_size * 2, hidden_size, bias=False) if has_skip else None,
-                        AdaptiveRMSNorm(hidden_size=hidden_size),
-                        Attention(
-                            hidden_size=hidden_size,
-                            heads=heads,
-                            dropout=attn_dropout,
-                        ),
-                        AdaptiveRMSNorm(hidden_size=hidden_size),
-                        FeedForward(hidden_size=hidden_size, intermediate_size=intermediate_size, dropout=ff_dropout),
-                    ]
-                )
-            )
-
-        self.final_norm = nn.RMSNorm(hidden_size)
-
-    @property
-    def device(self):
-        return next(self.parameters()).device
-
-    def forward(self, x, mask=None, adaptive_rmsnorm_cond=None):
-        batch, seq_len, *_ = x.shape
-
-        # keep track of skip connections
-        skip_connects = []
-
-        # rotary embeddings
-        rotary_emb = self.rotary_emb(seq_len)
-
-        # adaptive rmsnorm
-        rmsnorm_kwargs = dict()
-        if exists(adaptive_rmsnorm_cond):
-            rmsnorm_kwargs = dict(condition=adaptive_rmsnorm_cond)
-
-        # going through the attention layers
-        for skip_combiner, attn_prenorm, attn, ff_prenorm, ff in self.layers:
-            # in the paper, they use a u-net like skip connection
-            # unclear how much this helps, as no ablations or further numbers given besides a brief one-two sentence mention
-
-            if not exists(skip_combiner):
-                skip_connects.append(x)
-            else:
-                skip_connect = skip_connects.pop()
-                x = torch.cat((x, skip_connect), dim=-1)
-                x = skip_combiner(x)
-
-            attn_input = attn_prenorm(x, **rmsnorm_kwargs)
-            x = attn(attn_input, mask=mask, rotary_emb=rotary_emb) + x
-
-            ff_input = ff_prenorm(x, **rmsnorm_kwargs)
-            x = ff(ff_input, mask=mask) + x
-
-        return self.final_norm(x)
-
-
-class ConditionalFlowMatchingDurationPredictor(nn.Module):
-    """
-    Duration predictor module.
-    https://arxiv.org/abs/1905.09263
-    """
-
-    def __init__(self, config: ConditionalFlowMatchingConfig):
-        super().__init__()
-        self.log_domain_offset = 1.0
-        self.conv = nn.Conv1d(config.dim_cond_emb, 1, kernel_size=3, padding=1)
-
-    def forward(self, hidden_states: torch.FloatTensor):
-        """
-        Args:
-            hidden_states (`torch.Tensor` of shape `(batch_size, max_text_length, input_dim)`):
-                Batch of input sequences.
-
-        Returns:
-            `torch.Tensor`: Batch of predicted durations in log domain `(batch_size, max_text_length)`.
-
-        """
-        # (batch_size, input_dim, max_text_length)
-        hidden_states = hidden_states.transpose(1, -1)
-
-        # NOTE: calculate in log domain, (batch_size, max_text_length)
-        hidden_states = self.conv(hidden_states).squeeze(1)
-
-        if not self.training:
-            # NOTE: calculate in linear domain
-            hidden_states = torch.clamp(torch.round(hidden_states.exp() - self.log_domain_offset), min=0).long()
-
-        return hidden_states
+from .modules.fourier_embed import RandomFourierEmbed
+from .modules.modules import ConvPositionEmbed, Transformer
+from .modules.transformers.modules import ConditionalFlowMatchingDurationPredictor
 
 
 class ConditionalFlowMatchingModel(PreTrainedModel):
@@ -439,7 +150,7 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
                 Truncation value of a prior sample x0~N(0, 1).
                 https://arxiv.org/abs/1809.11096
         Returns:
-            x1 (`torch.FloatTensor` of shape `(batch_size, sequence_length)`):
+            x1 (`torch.FloatTensor` of shape `(batch_size, sequence_length, dim_in)`):
                 Synthesized log mel-spectrograms.
         """
         mask = input_ids.ne(0)
@@ -451,6 +162,10 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
             duration_predictions = self.duration_predictor(hidden_states)
             duration_predictions = duration_predictions.masked_fill(~mask, 0.0)
             hidden_states = length_regulator(hidden_states, duration_predictions)
+
+            # update mask
+            lengths = duration_predictions.sum(dim=1, keepdim=True)  # (bsz, 1)
+            mask = torch.arange(0, lengths.max(), device=lengths.device).unsqueeze(0) < lengths
 
         bsz, seq_len, _ = hidden_states.shape
 
@@ -497,13 +212,25 @@ class ConditionalFlowMatchingWithHifiGan(PreTrainedModel):
         model.vocoder = FastSpeech2ConformerHifiGan.from_pretrained(vocoder_path)
         return model
 
+    def _get_waveform_lengths(self, spectrogram_lengths):
+        def _conv_out_len(input_len, kernel_size, stride, padding):
+            # https://pytorch.org/docs/stable/generated/torch.nn.ConvTranspose1d.html
+            return (input_len - 1) * stride - 2 * padding + kernel_size
+
+        for kernel_size, stride in zip(
+            self.config.vocoder_config.upsample_kernel_sizes, self.config.vocoder_config.upsample_rates
+        ):
+            spectrogram_lengths = _conv_out_len(spectrogram_lengths, kernel_size, stride, (kernel_size - stride) // 2)
+
+        return spectrogram_lengths
+
     @torch.inference_mode()
     def forward(
         self,
         input_ids: torch.LongTensor,
         dt: float = 0.1,
         truncation_value: Optional[float] = None,
-    ) -> torch.FloatTensor:
+    ) -> List[torch.FloatTensor]:
         """
         Args:
             input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
@@ -514,9 +241,20 @@ class ConditionalFlowMatchingWithHifiGan(PreTrainedModel):
                 Truncation value of a prior sample x0~N(0, 1).
                 https://arxiv.org/abs/1809.11096
         Returns:
-            waveform (`torch.FloatTensor` of shape `(batch_size, (sequence_length - 1) * 320 + 400)`):
+            waveform (`list` of `torch.FloatTensor` of shape `(1, (sequence_length - 1) * 320 + 400)`):
                 Synthesized waveforms.
         """
         spectrogram = self.model.sample(input_ids, dt, truncation_value)
+
+        pad_value = dynamic_range_compression_torch(torch.tensor(0))
+        mask = spectrogram.ne(pad_value).all(dim=2)
+        spectrogram_lengths = mask.sum(dim=1)
+        waveform_lengths = self._get_waveform_lengths(spectrogram_lengths)
+
         waveform = self.vocoder(spectrogram)
-        return waveform
+
+        outputs = []
+        for output, length in zip(waveform, waveform_lengths):
+            outputs.append(output[:length].unsqueeze(0))
+
+        return outputs
