@@ -32,9 +32,9 @@ from transformers.models.fastspeech2_conformer.modeling_fastspeech2_conformer im
 
 from ..hifigan.data import dynamic_range_compression_torch
 from .configs import ConditionalFlowMatchingConfig, ConditionalFlowMatchingWithHifiGanConfig
+from .modules.fastspeech.modules import ConditionalFlowMatchingDurationPredictor
 from .modules.fourier_embed import RandomFourierEmbed
 from .modules.modules import ConvPositionEmbed, Transformer
-from .modules.transformers.modules import ConditionalFlowMatchingDurationPredictor
 
 
 class ConditionalFlowMatchingModel(PreTrainedModel):

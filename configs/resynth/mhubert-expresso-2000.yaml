@@ -13,6 +13,11 @@ dataset:
   train_file: "data/resynth/train.tsv"
   dev_file: "data/resynth/dev.tsv"
 
+  src_dir: "data/LibriSpeech"
+  tgt_dir: "data/LibriSpeech_resynth"
+  ext_audio_src: ".flac"
+  result_path: "results/resynth/score.csv"
+
 flow_matching:
   path: "models/flow_matching"
   batch_size: 2700 # work with single 24GB VRAM GPU
@@ -28,7 +33,7 @@ flow_matching:
 
   # inference
   dt: 0.0625
-  truncation_value: null  # truncation trick (https://arxiv.org/abs/1809.11096)
+  truncation_value: 1.0  # truncation trick (https://arxiv.org/abs/1809.11096)
 
   dense_model_name: "mhubert-base-vp_mls_cv_8lang"
   quantizer_model_name: "kmeans-expresso"
@@ -78,6 +83,10 @@ hifigan:
   summary_interval: 1000
   checkpoint_interval: 10000
   validation_interval: 10000
+
+flow_matching_with_hifigan:
+  name: "ryota-komatsu/flow_matching_with_hifigan"
+  batch_size: 32
 
 asr:
   name: "openai/whisper-large-v3"

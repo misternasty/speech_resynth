@@ -1,10 +1,67 @@
 import os
 import random
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
 import torchaudio
 from tqdm import tqdm
+
+
+class SpeechDataset(torch.utils.data.Dataset):
+    def __init__(self, src_dir, tgt_dir, ext_audio: str = ".flac"):
+        self.src_dir = Path(src_dir)
+        self.tgt_dir = Path(tgt_dir)
+
+        self.src_paths = list(self.src_dir.glob("**/*" + ext_audio))
+        self.tgt_paths = list()
+
+        for src_path in self.src_paths:
+            src_name = src_path.relative_to(src_dir)
+            tgt_path = self.tgt_dir / src_name
+            self.tgt_paths.append(tgt_path)
+
+    def __len__(self) -> int:
+        return len(self.src_paths)
+
+    def __getitem__(self, n: int) -> Dict[str, Any]:
+        src_path = self.src_paths[n]
+        tgt_path = self.tgt_paths[n]
+
+        src_path = str(src_path)
+        tgt_path = str(tgt_path)
+
+        input_values, sr = torchaudio.load(src_path)
+        input_values = torchaudio.functional.resample(input_values, sr, 16000)
+
+        return {"input_values": input_values, "tgt_path": tgt_path}
+
+    @staticmethod
+    def collate_fn(batch):
+        return batch
+
+
+class LibriSpeech(SpeechDataset):
+    def __getitem__(self, n: int) -> Dict[str, Any]:
+        item = super().__getitem__(n)
+
+        # transcript
+        src_name = Path(item["tgt_path"]).relative_to(self.tgt_dir)
+        src_name = src_name.with_suffix("")
+        src_name = str(src_name)
+
+        split, speaker_id, chap_id, utterance_id = src_name.split("/")
+        file = self.src_dir / split / speaker_id / chap_id / f"{speaker_id}-{chap_id}.trans.txt"
+
+        with open(file) as f:
+            for line in f:
+                id, transcript = line.rstrip().split(" ", maxsplit=1)
+                if id == utterance_id:
+                    break
+
+        item["transcript"] = transcript
+
+        return item
 
 
 class UnitDataset(torch.utils.data.Dataset):

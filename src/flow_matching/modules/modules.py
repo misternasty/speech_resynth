@@ -29,8 +29,8 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch import nn
 
+from .fastspeech.modules import FeedForward
 from .norm import AdaptiveRMSNorm
-from .transformers.modules import FeedForward
 
 
 def exists(val):

@@ -13,7 +13,7 @@ dataset:
 
   swuggy_dir: "~/zr-data/datasets/sLM21-dataset/lexical"
   sblimp_dir: "~/zr-data/datasets/sLM21-dataset/syntactic"
-  result_dir: "results/hubert"
+  result_dir: "results/speechlm/hubert"
 
 dataloader:
   batch_size_per_device: 96  # effective batch size (tokens) = dataset.units_per_sample * batch_size_per_device * #GPUs
