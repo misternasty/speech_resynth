@@ -25,6 +25,7 @@ class SpeechDataset(torch.utils.data.Dataset):
     def collate_fn(batch):
         input_values = [item["input_values"] for item in batch]
         attention_mask = [torch.ones_like(item["input_values"], dtype=torch.long) for item in batch]
+        names = [item["name"] for item in batch]
 
         input_values = pad_sequence(input_values, batch_first=True)
         attention_mask = pad_sequence(attention_mask, batch_first=True)
@@ -35,6 +36,7 @@ class SpeechDataset(torch.utils.data.Dataset):
             "attention_mask": attention_mask,
             "wavs_len": wavs_len,
             "padding_mask": ~attention_mask.bool(),
+            "names": names,
         }
 
 

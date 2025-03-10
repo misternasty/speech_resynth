@@ -23,12 +23,10 @@ def tokenize(config):
     tokenizer.train(files=files, trainer=trainer)
     tokenizer.save(config.s2u.tokenizer_path)
 
-    train_paths = glob.glob(config.dataset.unicode_train + "*")
-
     Path(config.dataset.train_file).parent.mkdir(parents=True, exist_ok=True)
     with open(config.dataset.train_file, "w") as f:
-        for path in train_paths:
-            with open(path) as g:
+        for file in files:
+            with open(file) as g:
                 for unicodes in g:
                     unicodes = unicodes.rstrip()
                     units = tokenizer.encode(unicodes).ids
