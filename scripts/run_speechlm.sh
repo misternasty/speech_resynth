@@ -12,7 +12,7 @@ module load openmpi
 
 module load miniconda
 eval "$(/apps/t4/rhel9/free/miniconda/24.1.2/bin/conda shell.bash hook)"
-conda acivate py39
+conda activate py39
 
 torchrun \
     --nnodes=1 \

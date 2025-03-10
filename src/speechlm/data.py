@@ -39,12 +39,18 @@ class SpeechDataset(torch.utils.data.Dataset):
 
 
 class UnitDataset(torch.utils.data.Dataset):
-    def __init__(self, path, units_per_sample: int = 704, num_special_tokens: int = 1):
+    def __init__(
+        self,
+        path,
+        units_per_sample: int,
+        num_special_tokens: int = 2,
+        eos_token_id: int = 1,
+    ):
         self.input_ids = []
         with open(path) as f:
             for units in f:
                 units = units.rstrip().split()
-                units = torch.tensor([int(u) + num_special_tokens for u in units])
+                units = torch.tensor([int(u) + num_special_tokens for u in units] + [eos_token_id])
                 self.input_ids.append(units)
 
         self.units_per_sample = units_per_sample

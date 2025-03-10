@@ -6,7 +6,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 
-def load_named_units_from_json(file, batch_size: int) -> Dict[str, Any]:
+def load_named_units_from_json(file, batch_size: int, num_special_tokens: int = 2) -> Dict[str, Any]:
     with open(file) as f:
         dataset = json.load(f)
 
@@ -19,7 +19,7 @@ def load_named_units_from_json(file, batch_size: int) -> Dict[str, Any]:
             break
 
         names = list(batch.keys())
-        input_ids = [torch.tensor(value) + 1 for value in batch.values()]  # 0: pad
+        input_ids = [torch.tensor(value) + num_special_tokens for value in batch.values()]  # 0: pad, 1: eos
         input_ids = pad_sequence(input_ids, batch_first=True)
 
         yield {"names": names, "input_ids": input_ids}

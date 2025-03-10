@@ -77,7 +77,20 @@ def train(config):
     # create model and move it to GPU with id rank
     device_id = rank % torch.cuda.device_count()
 
-    trainset = UnitDataset(config.dataset.train_file, config.dataset.units_per_sample)
+    num_special_tokens = len(
+        {
+            token_id
+            for token_id in (config.model.pad_token_id, config.model.bos_token_id, config.model.eos_token_id)
+            if token_id is not None
+        }
+    )
+
+    trainset = UnitDataset(
+        config.dataset.train_file,
+        units_per_sample=config.dataset.units_per_sample,
+        num_special_tokens=num_special_tokens,
+        eos_token_id=config.model.eos_token_id,
+    )
     sampler = DistributedSampler(trainset) if dist.is_initialized() else None
     train_loader = DataLoader(
         trainset,
@@ -93,7 +106,7 @@ def train(config):
 
     model = LlamaForCausalLM(
         LlamaConfig(
-            vocab_size=config.model.vocab_size + 1,
+            vocab_size=config.model.vocab_size + num_special_tokens,
             hidden_size=config.model.hidden_size,
             intermediate_size=config.model.intermediate_size,
             num_hidden_layers=config.model.num_hidden_layers,
