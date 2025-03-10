@@ -16,7 +16,7 @@ from .utils import get_lr_schedule
 
 
 @torch.inference_mode()
-def validate(config, model, step: int, writer: SummaryWriter):
+def validate(config, model, step: int, writer: SummaryWriter, num_special_tokens: int = 2):
     torch.cuda.empty_cache()
     model.eval()
 
@@ -28,12 +28,14 @@ def validate(config, model, step: int, writer: SummaryWriter):
         config.dataset.swuggy_dev_file,
         Path(config.dataset.result_dir) / "lexical/dev.txt",
         config.dataloader.batch_size_per_device,
+        num_special_tokens,
     )
     _eval(
         model,
         config.dataset.sblimp_dev_file,
         Path(config.dataset.result_dir) / "syntactic/dev.txt",
         config.dataloader.batch_size_per_device,
+        num_special_tokens,
     )
 
     subprocess.run(
@@ -195,7 +197,7 @@ def train(config):
                 writer.add_scalar("memory/reserved (GB)", torch.cuda.max_memory_reserved() / 2**30, step)
 
         if rank == 0:
-            validate(config, model, step, writer)
+            validate(config, model, step, writer, num_special_tokens)
 
             # save model
             ckpt = {

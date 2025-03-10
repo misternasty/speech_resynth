@@ -12,17 +12,27 @@ from .utils import load_named_units_from_json
 def evaluate(config):
     model = LlamaForCausalLM.from_pretrained(config.model.path).cuda()
 
+    num_special_tokens = len(
+        {
+            token_id
+            for token_id in (config.model.pad_token_id, config.model.bos_token_id, config.model.eos_token_id)
+            if token_id is not None
+        }
+    )
+
     _eval(
         model,
         config.dataset.swuggy_test_file,
         Path(config.dataset.result_dir) / "lexical/test.txt",
         config.dataloader.batch_size_per_device,
+        num_special_tokens,
     )
     _eval(
         model,
         config.dataset.sblimp_test_file,
         Path(config.dataset.result_dir) / "syntactic/test.txt",
         config.dataloader.batch_size_per_device,
+        num_special_tokens,
     )
 
     subprocess.run(
@@ -63,9 +73,10 @@ def _eval(
     in_file,
     out_file,
     batch_size: int,
+    num_special_tokens: int = 2,
 ):
     with open(out_file, "w") as f:
-        for batch in load_named_units_from_json(in_file, batch_size):
+        for batch in load_named_units_from_json(in_file, batch_size, num_special_tokens):
             # Speech LM
             input_ids = batch["input_ids"].cuda()
             labels = input_ids.masked_fill(input_ids.eq(0), -100)
