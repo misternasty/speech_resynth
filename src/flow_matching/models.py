@@ -79,7 +79,6 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
         input_ids: torch.LongTensor,
         spectrogram_labels: torch.FloatTensor,
         duration_labels: Optional[torch.LongTensor] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
     ):
         """
         Args:
@@ -89,9 +88,6 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
                 Batch of padded target features.
             duration_labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*, defaults to `None`):
                 Batch of padded durations.
-            attention_mask (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*, defaults to `None`):
-                Mask to avoid performing convolution and attention on padding token indices. Mask values selected in
-                `[0, 1]`: 0 for tokens that are **masked**, 1 for tokens that are **not masked**.
         """
         mask = (spectrogram_labels != -100).any(dim=-1)
         batch, seq_len, _ = spectrogram_labels.shape
@@ -114,10 +110,10 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
             # use groundtruth in training
             hidden_states = length_regulator(hidden_states, duration_labels)
 
-            attention_mask = attention_mask.bool()
+            attention_mask = input_ids.ne(0)
             duration_predictions = duration_predictions.masked_select(attention_mask)
             duration_labels = duration_labels.masked_select(attention_mask)
-            duration_labels = torch.log(duration_labels.float() + 1)
+            duration_labels = torch.log(duration_labels.float() + self.duration_predictor.log_domain_offset)
             duration_loss = F.mse_loss(duration_predictions, duration_labels)
 
         hidden_states = torch.cat([xt, hidden_states], dim=-1)

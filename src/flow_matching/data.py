@@ -89,6 +89,7 @@ class UnitDataset(torch.utils.data.Dataset):
             units, duration_labels, transcript = value["units"], value["durations"], value["transcript"]
 
             input_ids = torch.tensor(units) + 1  # 0: pad
+            duration_labels = torch.tensor(duration_labels)
 
             if spectrogram_dir is not None:
                 spectrogram_path = os.path.join(spectrogram_dir, name + ".pt")

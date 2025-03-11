@@ -10,8 +10,8 @@ dataset:
   ext_audio: ".wav"
   ext_txt: ".normalized.txt"
 
-  train_file: "data/resynth/train.json"  # 354,729 samples
-  dev_file: "data/resynth/dev.json"  # 5,736 samples
+  train_file: "data/resynth/train_deduplicate.json"  # 354,729 samples
+  dev_file: "data/resynth/dev_deduplicate.json"  # 5,736 samples
 
   # inference
   src_dir: "data/LibriSpeech"
@@ -21,8 +21,8 @@ dataset:
 
 flow_matching:
   path: "models/flow_matching"
-  batch_size: 2700 # work with single 24GB VRAM GPU
-  frames_per_seg: 100  # 2 seconds
+  batch_size: 44 # work with single 24GB VRAM GPU
+  frames_per_seg: null  # 2 seconds
   num_workers: 16
   epoch: 100
   warmup_steps: 1000
@@ -55,7 +55,7 @@ flow_matching:
   attn_dropout: 0.0
   mean: -5.8843  # mean of log mel-spectrogram
   std: 2.2615  # std of log mel-spectrogram
-  predict_duration: false
+  predict_duration: true
 
 hifigan:
   path: "ryota-komatsu/fastspeech2_conformer_hifigan"

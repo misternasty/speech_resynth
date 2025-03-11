@@ -118,6 +118,7 @@ def train_flow_matching(config):
         batch_size=config.flow_matching.batch_size,
         shuffle=True,
         num_workers=config.flow_matching.num_workers,
+        collate_fn=UnitDataset.collate_fn,
     )
     dev_loader = torch.utils.data.DataLoader(
         dev_set,
