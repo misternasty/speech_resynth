@@ -1,6 +1,9 @@
 import torch
+from fairseq.data.dictionary import Dictionary
 from textless import dispatch_quantizer
 from textless.data.speech_encoder import SpeechEncoder
+
+torch.serialization.add_safe_globals([Dictionary])
 
 
 def load_encoder(

@@ -34,7 +34,7 @@ from ..hifigan.data import dynamic_range_compression_torch
 from .configs import ConditionalFlowMatchingConfig, ConditionalFlowMatchingWithHifiGanConfig
 from .modules.fastspeech.modules import ConditionalFlowMatchingDurationPredictor
 from .modules.fourier_embed import RandomFourierEmbed
-from .modules.modules import ConvPositionEmbed, Transformer
+from .modules.transformer import ConvPositionEmbed, Transformer
 
 
 class ConditionalFlowMatchingModel(PreTrainedModel):
