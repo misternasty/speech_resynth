@@ -118,6 +118,7 @@ def train_flow_matching(config):
         batch_size=config.flow_matching.batch_size,
         shuffle=True,
         num_workers=config.flow_matching.num_workers,
+        collate_fn=UnitDataset.collate_fn,
     )
     dev_loader = torch.utils.data.DataLoader(
         dev_set,
@@ -174,6 +175,7 @@ def train_flow_matching(config):
                 loss = model(
                     input_ids=batch["input_ids"].cuda(),
                     spectrogram_labels=batch["spectrogram_labels"].cuda(),
+                    duration_labels=batch["duration_labels"].cuda(),
                 )
             scaler.scale(loss).backward()
 

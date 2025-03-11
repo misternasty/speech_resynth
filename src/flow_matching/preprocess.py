@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import List, Optional
 
@@ -49,6 +50,7 @@ def tokenize(config):
         config.flow_matching.dense_model_name,
         config.flow_matching.quantizer_model_name,
         config.flow_matching.vocab_size,
+        config.flow_matching.predict_duration,
     )
 
     _tokenize(encoder, config.dataset.train_file, train_paths, wav_dir)
@@ -56,27 +58,32 @@ def tokenize(config):
 
 
 def _tokenize(encoder, file, wav_paths: List[str], wav_dir: Path, txt_dir: Optional[Path] = None):
+    dataset = dict()
+
+    for wav_path in tqdm(wav_paths):
+        wav_name = wav_path.relative_to(wav_dir)
+        wav_name = wav_name.with_suffix("")
+        wav_path = str(wav_path)
+
+        waveform, sr = torchaudio.load(wav_path)
+        outputs = encoder(waveform.cuda())
+        units = outputs["units"].tolist()
+        durations = outputs["durations"].tolist()
+
+        if txt_dir is not None:
+            txt_path = txt_dir / wav_name
+            txt_path = txt_path.with_suffix(".normalized.txt")
+
+            with open(txt_path) as g:
+                txt = g.read().rstrip()
+
+            dataset[wav_name] = {"units": units, "durations": durations, "transcript": txt}
+        else:
+            dataset[wav_name] = {"units": units, "durations": durations, "transcript": ""}
+
     Path(file).parent.mkdir(parents=True, exist_ok=True)
     with open(file, "w") as f:
-        for wav_path in tqdm(wav_paths):
-            wav_name = wav_path.relative_to(wav_dir)
-            wav_name = wav_name.with_suffix("")
-            wav_path = str(wav_path)
-
-            waveform, sr = torchaudio.load(wav_path)
-            outputs = encoder(waveform.cuda())
-            units = " ".join(str(u) for u in outputs["units"].tolist())
-
-            if txt_dir is not None:
-                txt_path = txt_dir / wav_name
-                txt_path = txt_path.with_suffix(".normalized.txt")
-
-                with open(txt_path) as g:
-                    txt = g.read().rstrip()
-
-                f.write(f"{wav_name}\t{units}\t{txt}\n")
-            else:
-                f.write(f"{wav_name}\t{units}\t\n")
+        json.dump(dataset, f)
 
 
 def extract_features(config):
