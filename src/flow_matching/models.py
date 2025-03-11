@@ -109,7 +109,7 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
 
         # forward duration predictor
         duration_loss = 0
-        if duration_labels is not None:
+        if self.config.predict_duration:
             duration_predictions = self.duration_predictor(hidden_states)
             # use groundtruth in training
             hidden_states = length_regulator(hidden_states, duration_labels)
@@ -158,7 +158,7 @@ class ConditionalFlowMatchingModel(PreTrainedModel):
         hidden_states = self.to_cond_emb(input_ids)
 
         # forward duration predictor
-        if self.duration_predictor is not None:
+        if self.config.predict_duration:
             duration_predictions = self.duration_predictor(hidden_states)
             duration_predictions = duration_predictions.masked_fill(~mask, 0.0)
             hidden_states = length_regulator(hidden_states, duration_predictions)

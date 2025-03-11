@@ -27,6 +27,7 @@ def synthesize(config):
         config.flow_matching.dense_model_name,
         config.flow_matching.quantizer_model_name,
         config.flow_matching.vocab_size,
+        config.flow_matching.predict_duration,
     )
 
     decoder = ConditionalFlowMatchingWithHifiGan.from_pretrained(config.flow_matching_with_hifigan.name).cuda()
@@ -62,6 +63,7 @@ def synthesize_librispeech(config):
         config.flow_matching.dense_model_name,
         config.flow_matching.quantizer_model_name,
         config.flow_matching.vocab_size,
+        config.flow_matching.predict_duration,
     )
 
     decoder = ConditionalFlowMatchingWithHifiGan.from_pretrained(config.flow_matching_with_hifigan.name).cuda()

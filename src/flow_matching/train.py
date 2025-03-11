@@ -174,6 +174,7 @@ def train_flow_matching(config):
                 loss = model(
                     input_ids=batch["input_ids"].cuda(),
                     spectrogram_labels=batch["spectrogram_labels"].cuda(),
+                    duration_labels=batch["duration_labels"].cuda(),
                 )
             scaler.scale(loss).backward()
 
