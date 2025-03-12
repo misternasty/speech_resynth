@@ -12,6 +12,7 @@ dataset:
 
   train_file: "data/resynth/train.json"  # 354,729 samples
   dev_file: "data/resynth/dev.json"  # 5,736 samples
+  test_file: "data/resynth/test.json"
 
   # inference
   src_dir: "data/LibriSpeech"

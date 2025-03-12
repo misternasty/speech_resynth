@@ -11,36 +11,81 @@ from tqdm import tqdm
 
 
 class SpeechDataset(torch.utils.data.Dataset):
-    def __init__(self, src_dir, tgt_dir, ext_audio: str = ".flac"):
-        self.src_dir = Path(src_dir)
-        self.tgt_dir = Path(tgt_dir)
+    def __init__(
+        self,
+        wav_dir: str,
+        txt_dir: Optional[str] = None,
+        split: str = "train-*",
+        ext_audio: str = ".flac",
+        ext_txt: Optional[str] = None,
+    ):
+        self.wav_dir = Path(wav_dir)
+        self.txt_dir = Path(txt_dir) if txt_dir is not None else self.wav_dir
+        self.wav_paths = sorted(self.wav_dir.glob(f"{split}/**/*" + ext_audio))
 
-        self.src_paths = list(self.src_dir.glob("**/*" + ext_audio))
-        self.tgt_paths = list()
-
-        for src_path in self.src_paths:
-            src_name = src_path.relative_to(src_dir)
-            tgt_path = self.tgt_dir / src_name
-            self.tgt_paths.append(tgt_path)
+        self.ext_audio = ext_audio
+        self.ext_txt = ext_txt
 
     def __len__(self) -> int:
-        return len(self.src_paths)
+        return len(self.wav_paths)
 
     def __getitem__(self, n: int) -> Dict[str, Any]:
-        src_path = self.src_paths[n]
-        tgt_path = self.tgt_paths[n]
+        wav_path = self.wav_paths[n]
+        wav_name = wav_path.relative_to(self.wav_dir)
+        wav_name = wav_name.with_suffix("")
+        wav_name = str(wav_name)
+        wav_path = str(wav_path)
 
-        src_path = str(src_path)
-        tgt_path = str(tgt_path)
-
-        input_values, sr = torchaudio.load(src_path)
+        input_values, sr = torchaudio.load(wav_path)
         input_values = torchaudio.functional.resample(input_values, sr, 16000)
+        input_values = input_values.squeeze(0)
 
-        return {"input_values": input_values, "tgt_path": tgt_path}
+        return {"input_values": input_values, "name": wav_name}
 
     @staticmethod
     def collate_fn(batch):
-        return batch
+        input_values = [item["input_values"] for item in batch]
+        attention_mask = [torch.ones_like(item["input_values"], dtype=torch.long) for item in batch]
+        names = [item["name"] for item in batch]
+
+        input_values = pad_sequence(input_values, batch_first=True)
+        attention_mask = pad_sequence(attention_mask, batch_first=True)
+        wavs_len = torch.tensor([len(item["input_values"]) for item in batch])
+
+        return {
+            "input_values": input_values,
+            "attention_mask": attention_mask,
+            "wavs_len": wavs_len,
+            "padding_mask": ~attention_mask.bool(),
+            "names": names,
+        }
+
+
+class LibriTTS_R(SpeechDataset):
+    def __init__(
+        self,
+        wav_dir,
+        txt_dir=None,
+        split: str = "train-*",
+        ext_audio: str = ".wav",
+        ext_txt: Optional[str] = ".normalized.txt",
+    ):
+        super().__init__(wav_dir, txt_dir, split, ext_audio, ext_txt)
+
+    def __getitem__(self, n: int) -> Dict[str, Any]:
+        item = super().__getitem__(n)
+
+        txt_path = self.txt_dir / item["name"]
+        txt_path = txt_path.with_suffix(".normalized.txt")
+
+        transcript = ""
+        if txt_path.is_file():
+            with open(txt_path) as g:
+                transcript = g.read().rstrip()
+
+        item["transcript"] = transcript
+
+        return item
 
 
 class LibriSpeech(SpeechDataset):
@@ -48,12 +93,8 @@ class LibriSpeech(SpeechDataset):
         item = super().__getitem__(n)
 
         # transcript
-        src_name = Path(item["tgt_path"]).relative_to(self.tgt_dir)
-        src_name = src_name.with_suffix("")
-        src_name = str(src_name)
-
-        split, speaker_id, chap_id, utterance_id = src_name.split("/")
-        file = self.src_dir / split / speaker_id / chap_id / f"{speaker_id}-{chap_id}.trans.txt"
+        split, speaker_id, chap_id, utterance_id = item["name"].split("/")
+        file = self.txt_dir / split / speaker_id / chap_id / f"{speaker_id}-{chap_id}.trans.txt"
 
         with open(file) as f:
             for line in f:

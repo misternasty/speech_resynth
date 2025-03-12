@@ -16,12 +16,8 @@ from .utils.textless import load_encoder
 
 @torch.inference_mode()
 def synthesize(config):
-    dataset = SpeechDataset(config.dataset.src_dir, config.dataset.tgt_dir, config.dataset.ext_audio_src)
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        config.flow_matching_with_hifigan.batch_size,
-        collate_fn=SpeechDataset.collate_fn,
-    )
+    dataset = SpeechDataset(config.dataset.src_dir, ext_audio=config.dataset.ext_audio_src)
+    dataloader = torch.utils.data.DataLoader(dataset, config.flow_matching_with_hifigan.batch_size)
 
     encoder = load_encoder(
         config.flow_matching.dense_model_name,
@@ -46,18 +42,18 @@ def synthesize(config):
         for item, hyp_wav in zip(batch, audio_values):
             hyp_wav = hyp_wav.cpu()
 
-            Path(item["tgt_path"]).parent.mkdir(parents=True, exist_ok=True)
-            torchaudio.save(item["tgt_path"], hyp_wav, 16000)
+            hyp_path = Path(config.dataset.tgt_dir) / item["name"][0]
+            hyp_path = hyp_path.with_suffix(config.dataset.ext_audio_src)
+            hyp_path.parent.mkdir(parents=True, exist_ok=True)
+            hyp_path = str(hyp_path)
+
+            torchaudio.save(hyp_path, hyp_wav, 16000)
 
 
 @torch.inference_mode()
 def synthesize_librispeech(config):
-    dataset = LibriSpeech(config.dataset.src_dir, config.dataset.tgt_dir, config.dataset.ext_audio_src)
-    dataloader = torch.utils.data.DataLoader(
-        dataset,
-        config.flow_matching_with_hifigan.batch_size,
-        collate_fn=LibriSpeech.collate_fn,
-    )
+    dataset = LibriSpeech(config.dataset.src_dir, ext_audio=config.dataset.ext_audio_src)
+    dataloader = torch.utils.data.DataLoader(dataset, config.flow_matching_with_hifigan.batch_size)
 
     encoder = load_encoder(
         config.flow_matching.dense_model_name,
@@ -107,8 +103,12 @@ def synthesize_librispeech(config):
             hyp_wav = hyp_wav.cpu()
             ref_wav = item["input_values"]
 
-            Path(item["tgt_path"]).parent.mkdir(parents=True, exist_ok=True)
-            torchaudio.save(item["tgt_path"], hyp_wav, 16000)
+            hyp_path = Path(config.dataset.tgt_dir) / item["name"][0]
+            hyp_path = hyp_path.with_suffix(config.dataset.ext_audio_src)
+            hyp_path.parent.mkdir(parents=True, exist_ok=True)
+            hyp_path = str(hyp_path)
+
+            torchaudio.save(hyp_path, hyp_wav, 16000)
 
             hyp_wavs.append(hyp_wav.squeeze(0).numpy())
             ref_wavs.append(ref_wav.squeeze(0).numpy())
@@ -120,7 +120,7 @@ def synthesize_librispeech(config):
         batch_refs = [ref["text"] for ref in batch_refs]
 
         for item, hyp, ref in zip(batch, batch_hyps, batch_refs):
-            transcripts.append(item["transcript"])
+            transcripts.append(item["transcript"][0])
             hyps.append(hyp)
             refs.append(ref)
 
