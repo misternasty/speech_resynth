@@ -16,11 +16,14 @@ dataset:
   dev_file: "data/resynth/dev_deduplicate.json"  # 5,736 samples
   test_file: "data/resynth/test_deduplicate.json"  # 9,957 samples
 
-  # inference
-  src_dir: "data/LibriSpeech"
-  tgt_dir: "data/LibriSpeech_resynth"
-  ext_audio_src: ".flac"
-  result_path: "results/resynth/score.csv"
+synthesis:
+  src_dir: ${dataset.wav_dir}
+  tgt_dir: ${dataset.wav_dir}_resynth
+  split: "test-*"
+  ext_audio: ${dataset.ext_audio}
+
+eval:
+  result_path: "results/resynth/score_deduplicate.csv"
 
 flow_matching:
   path: "models/flow_matching"

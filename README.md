@@ -24,16 +24,12 @@ cd -
 ## Usage: sampling multi-speaker speech from self-supervised discrete units
 
 ```python
-import torch
 import torchaudio
-from fairseq.data.dictionary import Dictionary
 from textless.data.speech_encoder import SpeechEncoder
 
 from src.flow_matching.models import ConditionalFlowMatchingWithHifiGan
 
 wav_path = "/path/to/wav"
-
-torch.serialization.add_safe_globals([Dictionary])
 
 encoder = SpeechEncoder.by_name(
     dense_model_name="mhubert-base-vp_mls_cv_8lang",
@@ -63,7 +59,6 @@ audio_values = decoder(units)
 ```python
 import torch
 import torchaudio
-from fairseq.data.dictionary import Dictionary
 from textless.data.speech_encoder import SpeechEncoder
 from tokenizers import Tokenizer
 from transformers import LlamaForCausalLM
@@ -71,8 +66,6 @@ from transformers import LlamaForCausalLM
 from src.speechlm.utils import convert_units_to_unicode
 
 wav_path = "/path/to/wav"
-
-torch.serialization.add_safe_globals([Dictionary])
 
 encoder = SpeechEncoder.by_name(
     dense_model_name="hubert-base-ls960",
