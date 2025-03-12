@@ -136,7 +136,16 @@ sh scripts/download_slm21.sh  # download sWUGGY and sBLIMP
 python main_resynth.py --config=configs/resynth/mhubert-expresso-2000.yaml
 ```
 
-To run only a specific stage (resample, tokenize, extract_features, train_hifigan, or train_flow_matching), pass it as an argument.
+To run only a specific stage, pass it as an argument.
+
+Supported processing stages
+1. resample
+1. tokenize
+1. extract_features
+1. train_hifigan  # can be skipped when using a pretrained model
+1. train_flow_matching
+1. evaluate
+1. synthesize
 
 ```shell
 python main_resynth.py tokenize --config=configs/resynth/mhubert-expresso-2000.yaml

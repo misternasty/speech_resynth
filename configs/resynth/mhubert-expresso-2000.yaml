@@ -10,9 +10,11 @@ dataset:
   ext_audio: ".wav"
   ext_txt: ".normalized.txt"
 
+  # json file format
+  # "name": {"units": List[int], "durations": List[int], "transcript": str}
   train_file: "data/resynth/train.json"  # 354,729 samples
   dev_file: "data/resynth/dev.json"  # 5,736 samples
-  test_file: "data/resynth/test.json"
+  test_file: "data/resynth/test.json"  # 9,957 samples
 
   # inference
   src_dir: "data/LibriSpeech"

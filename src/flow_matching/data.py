@@ -195,12 +195,11 @@ class UnitDataset(torch.utils.data.Dataset):
         duration_labels = [item["duration_labels"] for item in batch]
         transcripts = [item["transcripts"] for item in batch]
         names = [item["names"] for item in batch]
-        input_values = [item["input_values"] for item in batch]
+        input_values = [item["input_values"].unsqueeze(0) for item in batch]
 
         input_ids = pad_sequence(input_ids, batch_first=True)
         spectrogram_labels = pad_sequence(spectrogram_labels, batch_first=True, padding_value=-100)
         duration_labels = pad_sequence(duration_labels, batch_first=True)
-        input_values = pad_sequence(input_values, batch_first=True)
 
         return {
             "input_ids": input_ids,

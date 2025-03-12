@@ -2,7 +2,7 @@ import fire
 from omegaconf import OmegaConf
 
 from src.flow_matching.preprocess import extract_features, preprocess, resample, tokenize
-from src.flow_matching.synthesize import synthesize, synthesize_librispeech
+from src.flow_matching.synthesize import evaluate, synthesize, synthesize_librispeech
 from src.flow_matching.train import train_flow_matching
 from src.hifigan.train import train_hifigan
 
@@ -28,6 +28,10 @@ class TaskRunner:
         config = OmegaConf.load(config)
         train_flow_matching(config)
 
+    def evaluate(self, config: str = "configs/resynth/mhubert-expresso-2000.yaml"):
+        config = OmegaConf.load(config)
+        evaluate(config)
+
     def synthesize(self, config: str = "configs/resynth/mhubert-expresso-2000.yaml"):
         config = OmegaConf.load(config)
         synthesize(config)
@@ -41,6 +45,7 @@ class TaskRunner:
         preprocess(config)
         train_hifigan(config)
         train_flow_matching(config)
+        evaluate(config)
 
 
 if __name__ == "__main__":
