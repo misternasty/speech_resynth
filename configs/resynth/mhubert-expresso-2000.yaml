@@ -64,7 +64,7 @@ flow_matching:
   predict_duration: false
 
 hifigan:
-  path: "ryota-komatsu/fastspeech2_conformer_hifigan"
+  path: "models/fastspeech2_conformer_hifigan"
   batch_size: 64
   segment_size: 16080
   num_workers: 20
